@@ -1,0 +1,35 @@
+# DMCA Report — Domains to monitor
+# One domain per line. Lines starting with # are ignored.
+
+uwhisp.com
+mundodeportivo.com
+observador.pt
+bojoko.com
+placar.com.br
+umdoisesportes.com.br
+trivela.com.br
+footballwhispers.com
+beachsoccerbrasil.com.br
+afrik-foot.com
+lakersbrasil.com
+solobasket.com
+alairelibre.cl
+topmercato.com
+basketusa.com
+sportsmole.co.uk
+bojoko.ca
+parier-suisse.ch
+bepicks.com
+calciodangolo.com
+vringe.com
+esportelandia.com.br
+fotbalportal.cz
+pronosticos.futbol
+wesportfr.com
+quintoquartobr.com
+resultadosnahora.com.br
+dailymercato.com
+premierleaguebrasil.com.br
+mrfixitstips.co.uk
+lubsport.pl
+soccernet.ng

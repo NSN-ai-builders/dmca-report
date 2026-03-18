@@ -1,0 +1,8 @@
+{
+  "google_sheet_id": "",
+  "requests_page_size": 100,
+  "rate_limit_delay_seconds": 1.5,
+  "max_retries": 3,
+  "summary_sheet_name": "Summary",
+  "details_sheet_name": "Notice Details"
+}
