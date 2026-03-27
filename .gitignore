@@ -1,6 +1,9 @@
 venv/
-  __pycache__/                                                                                   
-  credentials/                                                                                 
-  *.pyc
-  .env
-  
+__pycache__/
+credentials/
+*.pyc
+.env
+dmca_data.db
+.DS_Store
+dmca_dashboard.html
+lumen_links_export.csv

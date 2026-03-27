@@ -12,6 +12,7 @@ import time
 from src.models import DomainReport
 from src.transparency_api import fetch_domain_report
 from src.sheets_writer import write_to_sheets
+from src.database import get_connection, load_domain_report, save_domain_report, is_stale
 
 logging.basicConfig(
     level=logging.INFO,
@@ -87,6 +88,14 @@ def print_dry_run(reports: list[DomainReport]):
                 print(f"  ... and {len(r.notices) - 10} more notices")
 
 
+def _csv_safe(val):
+    """Prefix strings that could trigger formula execution in spreadsheets."""
+    s = str(val)
+    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + s
+    return s
+
+
 def export_csv(reports: list[DomainReport], output_dir: str):
     """Export summary and notice details as CSV files."""
     from collections import Counter
@@ -120,9 +129,9 @@ def export_csv(reports: list[DomainReport], output_dir: str):
             top_owner = owners.most_common(1)[0][0] if owners else ""
 
             w.writerow([
-                r.domain, r.total_requested, r.total_removed, r.no_action_taken,
+                _csv_safe(r.domain), r.total_requested, r.total_removed, r.no_action_taken,
                 r.duplicate, r.waiting, c26, r26, len(r.notices),
-                latest_date, top_reporter, top_owner, "OK", tr_url,
+                latest_date, _csv_safe(top_reporter), _csv_safe(top_owner), "OK", tr_url,
             ])
     logger.info("Summary CSV: %s", summary_path)
 
@@ -142,10 +151,38 @@ def export_csv(reports: list[DomainReport], output_dir: str):
         for domain, n in all_notices:
             period = _date_to_period(n.date)
             w.writerow([
-                period, domain, n.notice_id, n.date, n.urls_claimed, n.urls_removed,
-                n.reporter_name, n.owner_name, n.lumen_url,
+                period, _csv_safe(domain), n.notice_id, n.date, n.urls_claimed, n.urls_removed,
+                _csv_safe(n.reporter_name), _csv_safe(n.owner_name), n.lumen_url,
             ])
     logger.info("Details CSV: %s", details_path)
+
+
+def fetch_all_reports(domains, settings, conn, force_refresh=False, max_age=24, progress_cb=None):
+    """Fetch reports for all domains, using cache when available.
+
+    progress_cb(index, total, domain, cached) is called before each domain.
+    The `cached` flag indicates whether the domain will be served from cache.
+    """
+    page_size = settings.get("requests_page_size", 100)
+    delay = settings.get("rate_limit_delay_seconds", 1.5)
+    max_retries = settings.get("max_retries", 3)
+    reports = []
+    for i, domain in enumerate(domains, 1):
+        if not force_refresh:
+            cached = load_domain_report(conn, domain)
+            if cached is not None and not is_stale(conn, domain, max_age):
+                if progress_cb:
+                    progress_cb(i, len(domains), domain, True)
+                reports.append(cached)
+                continue
+        if progress_cb:
+            progress_cb(i, len(domains), domain, False)
+        report = fetch_domain_report(domain, page_size=page_size, max_retries=max_retries)
+        reports.append(report)
+        save_domain_report(conn, report)
+        if i < len(domains):
+            time.sleep(delay)
+    return reports
 
 
 def main():
@@ -171,9 +208,47 @@ def main():
         action="store_true",
         help="Export results to CSV files",
     )
+    parser.add_argument(
+        "--dashboard",
+        action="store_true",
+        help="Generate a self-contained HTML dashboard",
+    )
+    parser.add_argument(
+        "--output",
+        default="dmca_dashboard.html",
+        help="Output path for the HTML dashboard (default: dmca_dashboard.html)",
+    )
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Force fresh API fetch, ignoring cached data",
+    )
+    parser.add_argument(
+        "--max-age",
+        type=int,
+        default=24,
+        help="Cache staleness threshold in hours (default: 24)",
+    )
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Start interactive dashboard server on http://localhost:8050",
+    )
     args = parser.parse_args()
 
     settings = load_settings(args.config)
+
+    if args.serve:
+        from src.server import create_app
+        app = create_app(
+            domains_path=args.domains,
+            settings=settings,
+            max_age=args.max_age,
+        )
+        logger.info("Starting dashboard server at http://localhost:8050")
+        app.run(host="127.0.0.1", port=8050, debug=False)
+        return
+
     domains = load_domains(args.domains)
 
     if not domains:
@@ -182,22 +257,30 @@ def main():
 
     logger.info("Loaded %d domains", len(domains))
 
-    page_size = settings.get("requests_page_size", 100)
-    delay = settings.get("rate_limit_delay_seconds", 1.5)
-    max_retries = settings.get("max_retries", 3)
+    conn = get_connection()
 
-    reports: list[DomainReport] = []
-    for i, domain in enumerate(domains, 1):
-        logger.info("Processing %d/%d: %s ...", i, len(domains), domain)
-        report = fetch_domain_report(
-            domain, page_size=page_size, max_retries=max_retries
-        )
-        reports.append(report)
+    def _progress(i, total, domain, cached):
+        if cached:
+            logger.info("Cached %d/%d: %s", i, total, domain)
+        else:
+            logger.info("Fetching %d/%d: %s ...", i, total, domain)
 
-        if i < len(domains):
-            time.sleep(delay)
+    reports = fetch_all_reports(
+        domains, settings, conn,
+        force_refresh=args.refresh,
+        max_age=args.max_age,
+        progress_cb=_progress,
+    )
+    conn.close()
 
-    if args.csv:
+    if args.dashboard:
+        from src.dashboard import generate_dashboard
+        html = generate_dashboard(reports)
+        output_path = os.path.abspath(args.output)
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(html)
+        logger.info("Dashboard written to %s", output_path)
+    elif args.csv:
         export_csv(reports, os.path.dirname(os.path.abspath(__file__)))
         print_dry_run(reports)
     elif args.dry_run:
