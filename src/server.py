@@ -73,7 +73,7 @@ def create_app(domains_path, settings, max_age=24):
     def _localhost_only():
         """Reject requests not originating from localhost."""
         remote = request.remote_addr
-        if remote not in ("127.0.0.1", "::1"):
+        if os.environ.get("ALLOW_PROXY", "") != "1" and remote not in ("127.0.0.1", "::1"):
             abort(403)
 
     @app.route("/")
