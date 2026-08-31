@@ -47,9 +47,9 @@ def create_app(db_path: str | None = None) -> Flask:
         except (FileNotFoundError, sqlite3.DatabaseError):
             app.logger.exception("DMCA database unavailable")
             return (
-                "<!doctype html><html lang='fr'><meta charset='utf-8'>"
+                "<!doctype html><html lang='en'><meta charset='utf-8'>"
                 "<title>DMCA Monitor</title><body><h1>DMCA Monitor</h1>"
-                "<p>La base de données est momentanément indisponible.</p></body></html>",
+                "<p>The database is temporarily unavailable.</p></body></html>",
                 503,
             )
 

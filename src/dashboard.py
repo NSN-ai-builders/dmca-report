@@ -7,22 +7,22 @@ from html import escape
 from urllib.parse import urlsplit
 
 ROLE_LABELS = {
-    "targeted": "Page NSN ciblée",
-    "source": "NSN est la source",
-    "unresolved": "À récupérer",
-    "other": "Rôle à vérifier",
+    "targeted": "NSN page targeted",
+    "source": "NSN is the source",
+    "unresolved": "Pending retrieval",
+    "other": "Role needs review",
 }
 
 STATUS_LABELS = {
-    "complete": "Complet",
-    "pending": "En attente",
-    "preflight": "Préparation",
-    "email_timeout": "Email en retard",
-    "token_consumption_error": "Lien perdu",
-    "submission_started": "Soumission lancée",
-    "submission_unknown": "Soumission incertaine",
-    "submission_rejected": "Soumission refusée",
-    "preflight_error": "Erreur avant envoi",
+    "complete": "Complete",
+    "pending": "Pending",
+    "preflight": "Preparing",
+    "email_timeout": "Email delayed",
+    "token_consumption_error": "Access link lost",
+    "submission_started": "Submission started",
+    "submission_unknown": "Submission status unknown",
+    "submission_rejected": "Submission rejected",
+    "preflight_error": "Preflight error",
 }
 
 
@@ -41,7 +41,7 @@ def _short_url(value: str) -> str:
 
 def _fmt_timestamp(value: str) -> str:
     if not value:
-        return "Jamais"
+        return "Never"
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         return parsed.astimezone(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
@@ -73,17 +73,17 @@ def _notice_row(notice: dict) -> str:
     primary_html = (
         f'<a href="{_e(primary)}" target="_blank" rel="noreferrer">{_e(_short_url(primary))}</a>'
         + (f'<span class="more-count">+{more}</span>' if more > 0 else "")
-        if primary else '<span class="muted">Non déterminée</span>'
+        if primary else '<span class="muted">Not identified</span>'
     )
     search_blob = " ".join([
         str(notice["notice_id"]), notice["domain"], notice.get("sender", ""),
         " ".join(monitored), ROLE_LABELS.get(role, role), STATUS_LABELS.get(status, status),
     ]).lower()
-    sender = notice.get("sender") or "Non publié"
+    sender = notice.get("sender") or "Not published"
     return f"""
     <details class="notice" data-role="{_e(role)}" data-status="{_e(status)}" data-search="{_e(search_blob)}">
       <summary>
-        <span class="notice-date">{_e(notice.get('date') or 'Date inconnue')}</span>
+        <span class="notice-date">{_e(notice.get('date') or 'Date unknown')}</span>
         <span class="notice-id">#{notice['notice_id']}</span>
         <span class="notice-domain">{_e(notice['domain'])}</span>
         <span class="role role-{_e(role)}">{_e(ROLE_LABELS.get(role, role))}</span>
@@ -93,18 +93,18 @@ def _notice_row(notice: dict) -> str:
       </summary>
       <div class="notice-detail">
         <div class="detail-meta">
-          <div><span>Expéditeur</span><strong>{_e(sender)}</strong></div>
-          <div><span>Statut technique</span><strong>{_e(status)}</strong></div>
-          <div><span>Tentatives</span><strong>{notice.get('attempts', 0)}</strong></div>
+          <div><span>Sender</span><strong>{_e(sender)}</strong></div>
+          <div><span>Technical status</span><strong>{_e(status)}</strong></div>
+          <div><span>Attempts</span><strong>{notice.get('attempts', 0)}</strong></div>
         </div>
         <div class="url-columns">
           <section>
-            <h3>URLs originales</h3>
-            {_url_list(notice.get('original_urls', []), 'Aucune URL originale publiée.')}
+            <h3>Original URLs</h3>
+            {_url_list(notice.get('original_urls', []), 'No original URL published.')}
           </section>
           <section>
-            <h3>URLs signalées comme contrefaisantes</h3>
-            {_url_list(notice.get('infringing_urls', []), 'Aucune URL récupérée.')}
+            <h3>Reported infringing URLs</h3>
+            {_url_list(notice.get('infringing_urls', []), 'No URL retrieved.')}
           </section>
         </div>
       </div>
@@ -114,18 +114,18 @@ def _notice_row(notice: dict) -> str:
 def _priority_item(notice: dict) -> str:
     role = notice["role"]
     if role == "targeted":
-        action = "Vérifier la page et décider s'il faut corriger ou contester."
+        action = "Review the page and decide whether to fix or dispute the claim."
     else:
-        action = "Récupérer le détail de la notice sans renvoyer une soumission déjà acceptée."
+        action = "Retrieve the notice details without resubmitting an accepted request."
     urls = notice.get("monitored_urls") or []
     page = urls[0] if urls else ""
     page_html = (
         f'<a href="{_e(page)}" target="_blank" rel="noreferrer">{_e(_short_url(page))}</a>'
-        if page else '<span class="muted">URL indisponible</span>'
+        if page else '<span class="muted">URL unavailable</span>'
     )
     return f"""
       <article class="priority-item">
-        <div class="priority-date">{_e(notice.get('date') or 'Date inconnue')}</div>
+        <div class="priority-date">{_e(notice.get('date') or 'Date unknown')}</div>
         <div>
           <div class="priority-title">#{notice['notice_id']} · {_e(notice['domain'])}</div>
           <div class="priority-page">{page_html}</div>
@@ -142,16 +142,16 @@ def render_dashboard(data: dict) -> str:
     priorities = [item for item in notices if item["role"] in {"targeted", "unresolved", "other"}]
     priority_html = "".join(_priority_item(item) for item in priorities[:8])
     if not priority_html:
-        priority_html = '<p class="empty-state">Aucune notice ne demande d’action.</p>'
+        priority_html = '<p class="empty-state">No notice currently requires action.</p>'
     notices_html = "".join(_notice_row(item) for item in notices)
     if not notices_html:
-        notices_html = '<p class="empty-state">La base ne contient encore aucune notice.</p>'
+        notices_html = '<p class="empty-state">The database does not contain any notices yet.</p>'
 
     synced_at = _fmt_timestamp(metadata.get("synced_at", ""))
     generated = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
 
     return f"""<!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -186,43 +186,43 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
 <body>
 <header class="topbar">
   <div class="brand">DMCA Monitor <span>NSN</span></div>
-  <div class="sync">Base synchronisée : {_e(synced_at)}<br>Page générée : {_e(generated)}</div>
+  <div class="sync">Database synced: {_e(synced_at)}<br>Page generated: {_e(generated)}</div>
 </header>
 <main>
   <section class="intro">
     <div>
-      <h1>Notices Lumen</h1>
-      <p>Les pages NSN visées, les contenus repris ailleurs et les récupérations incomplètes. Données issues du flux Lumen direct, pas du rapport Google différé.</p>
+      <h1>Lumen notices</h1>
+      <p>NSN pages targeted by claims, NSN content copied elsewhere, and notices still awaiting retrieval. Data comes directly from Lumen rather than Google's delayed report.</p>
     </div>
-    <div class="coverage"><strong>{summary['site_scopes']}</strong> sites · <strong>{summary['search_domains']}</strong> domaines · <strong>{summary['baseline_domains']}</strong> baselines</div>
+    <div class="coverage"><strong>{summary['site_scopes']}</strong> sites · <strong>{summary['search_domains']}</strong> domains · <strong>{summary['baseline_domains']}</strong> baselines</div>
   </section>
 
-  <section class="metrics" aria-label="Résumé">
-    <div class="metric"><span class="metric-label">Notices enregistrées</span><strong class="metric-value">{summary['total_notices']}</strong><span class="metric-note">{summary['complete']} avec détail complet</span></div>
-    <div class="metric"><span class="metric-label">Pages NSN ciblées</span><strong class="metric-value">{summary['targeted']}</strong><span class="metric-note">À vérifier en priorité</span></div>
-    <div class="metric"><span class="metric-label">NSN est la source</span><strong class="metric-value">{summary['source']}</strong><span class="metric-note">Contenu repris sur d’autres sites</span></div>
-    <div class="metric"><span class="metric-label">À récupérer ou vérifier</span><strong class="metric-value">{summary['unresolved']}</strong><span class="metric-note">Lien perdu, attente ou rôle ambigu</span></div>
+  <section class="metrics" aria-label="Summary">
+    <div class="metric"><span class="metric-label">Notices recorded</span><strong class="metric-value">{summary['total_notices']}</strong><span class="metric-note">{summary['complete']} with full details</span></div>
+    <div class="metric"><span class="metric-label">NSN pages targeted</span><strong class="metric-value">{summary['targeted']}</strong><span class="metric-note">Review first</span></div>
+    <div class="metric"><span class="metric-label">NSN is the source</span><strong class="metric-value">{summary['source']}</strong><span class="metric-note">Content copied to other sites</span></div>
+    <div class="metric"><span class="metric-label">Pending retrieval or review</span><strong class="metric-value">{summary['unresolved']}</strong><span class="metric-note">Lost link, pending request, or unclear role</span></div>
   </section>
 
   <section>
-    <div class="section-head"><h2>À traiter</h2><p>Pages ciblées et notices incomplètes</p></div>
+    <div class="section-head"><h2>Needs attention</h2><p>Targeted pages and incomplete notices</p></div>
     <div class="priority-list">{priority_html}</div>
   </section>
 
   <section>
-    <div class="section-head"><h2>Toutes les notices</h2><p>Cliquer sur une ligne pour afficher les URLs</p></div>
+    <div class="section-head"><h2>All notices</h2><p>Open a row to view its URLs</p></div>
     <div class="filters">
-      <input id="search" type="search" placeholder="Rechercher un domaine, une URL, un expéditeur ou un ID" aria-label="Rechercher">
-      <select id="role-filter" aria-label="Filtrer par rôle">
-        <option value="">Tous les rôles</option><option value="targeted">Page NSN ciblée</option><option value="source">NSN est la source</option><option value="unresolved">À récupérer</option><option value="other">Rôle à vérifier</option>
+      <input id="search" type="search" placeholder="Search by domain, URL, sender, or ID" aria-label="Search">
+      <select id="role-filter" aria-label="Filter by role">
+        <option value="">All roles</option><option value="targeted">NSN page targeted</option><option value="source">NSN is the source</option><option value="unresolved">Pending retrieval</option><option value="other">Role needs review</option>
       </select>
-      <select id="status-filter" aria-label="Filtrer par statut">
-        <option value="">Tous les statuts</option><option value="complete">Complet</option><option value="pending">En attente</option><option value="token_consumption_error">Lien perdu</option><option value="email_timeout">Email en retard</option>
+      <select id="status-filter" aria-label="Filter by status">
+        <option value="">All statuses</option><option value="complete">Complete</option><option value="pending">Pending</option><option value="token_consumption_error">Access link lost</option><option value="email_timeout">Email delayed</option>
       </select>
     </div>
-    <div class="list-head"><span>Date</span><span>Notice</span><span>Domaine</span><span>Rôle</span><span>Page suivie</span><span>Statut</span><span></span></div>
+    <div class="list-head"><span>Date</span><span>Notice</span><span>Domain</span><span>Role</span><span>Monitored page</span><span>Status</span><span></span></div>
     <div class="notice-list" id="notice-list">{notices_html}</div>
-    <div class="result-count" id="result-count">{len(notices)} résultat(s)</div>
+    <div class="result-count" id="result-count">{len(notices)} result(s)</div>
   </section>
 </main>
 <script>
@@ -237,7 +237,7 @@ function applyFilters(){{
     const ok=(!q||row.dataset.search.includes(q))&&(!role.value||row.dataset.role===role.value)&&(!status.value||row.dataset.status===status.value);
     row.hidden=!ok; if(ok) visible++;
   }});
-  count.textContent=`${{visible}} résultat(s)`;
+  count.textContent=`${{visible}} result(s)`;
 }}
 [search,role,status].forEach(el=>el.addEventListener('input',applyFilters));
 </script>
