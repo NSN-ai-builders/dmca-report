@@ -187,7 +187,9 @@ def _payload(item: dict, by_domain: dict[str, list[dict]]) -> tuple[dict, list[d
     originals = item.get("original_urls") or result.get("original_urls") or []
     infringing = item.get("infringing_urls") or result.get("infringing_urls") or []
     sender = item.get("sender") or result.get("sender") or ""
-    scopes = item.get("scopes") or by_domain.get(_normalize_domain(item.get("domain", "")), [])
+    # Attribute unlocked URLs against the entire active fleet, not only the domain
+    # whose broad Lumen search happened to return the notice.
+    scopes = [scope for domain_scopes in by_domain.values() for scope in domain_scopes]
 
     url_rows = []
     targeted = False

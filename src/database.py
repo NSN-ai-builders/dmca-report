@@ -6,6 +6,7 @@ import os
 import sqlite3
 from collections import defaultdict
 from pathlib import Path
+from urllib.parse import urlsplit
 
 DB_PATH = os.environ.get("DMCA_DB_PATH", "/app/data/dmca_monitor.db")
 
@@ -71,9 +72,19 @@ def load_dashboard_data(db_path: str = DB_PATH) -> dict:
         notice_id = int(row["notice_id"])
         urls = urls_by_notice.get(notice_id, [])
         monitored_urls = [item["url"] for item in urls if item["monitored"]]
+        matched_scopes = list(dict.fromkeys(
+            item["scope_url"] for item in urls if item["monitored"] and item["scope_url"]
+        ))
+        matched_domains = list(dict.fromkeys(
+            (urlsplit(scope).hostname or "").removeprefix("www.") for scope in matched_scopes
+        ))
+        query_domain = row["search_domain"]
+        display_domain = ", ".join(domain for domain in matched_domains if domain) or query_domain
         notices.append({
             "notice_id": notice_id,
-            "domain": row["search_domain"],
+            "domain": display_domain,
+            "query_domain": query_domain,
+            "matched_scopes": matched_scopes,
             "date": row["notice_date"] or "",
             "title": row["title"] or "DMCA",
             "status": row["status"],

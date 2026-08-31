@@ -31,7 +31,7 @@ class TestLiveDashboard(unittest.TestCase):
         pending = root / "pending.json"
         pending.write_text(json.dumps([
             {
-                "id": 1, "domain": "bojoko.ca", "date": "August 30, 2026",
+                "id": 1, "domain": "bojoko.co.za", "date": "August 30, 2026",
                 "status": "complete", "attempts": 1, "captured_at": 1788170400,
                 "scopes": [{"url": "https://bojoko.ca/", "host": "bojoko.ca", "path": "/"}],
                 "sender": "Sender One", "original_urls": ["https://source.example/work"],
@@ -79,6 +79,8 @@ class TestLiveDashboard(unittest.TestCase):
             data = load_dashboard_data(str(db))
             by_id = {item["notice_id"]: item for item in data["notices"]}
             self.assertEqual(by_id[1]["role"], "targeted")
+            self.assertEqual(by_id[1]["domain"], "bojoko.ca")
+            self.assertEqual(by_id[1]["query_domain"], "bojoko.co.za")
             self.assertEqual(by_id[2]["role"], "source")
             self.assertEqual(by_id[3]["role"], "unresolved")
             self.assertEqual(by_id[4]["role"], "other")
