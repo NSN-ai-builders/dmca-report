@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from html import escape
 from urllib.parse import urlsplit
@@ -60,6 +61,16 @@ def _fmt_notice_date(value: str) -> str:
         return value
 
 
+def _fmt_epoch(value) -> str:
+    if not value:
+        return "Time unavailable"
+    try:
+        parsed = datetime.fromtimestamp(float(value), timezone.utc)
+        return f"{parsed.day} {parsed.strftime('%B %Y, %H:%M UTC')}"
+    except (TypeError, ValueError, OSError):
+        return "Time unavailable"
+
+
 def _notice_link(notice_id: int) -> str:
     return f"https://lumendatabase.org/notices/{int(notice_id)}"
 
@@ -70,6 +81,20 @@ def _notice_button(notice_id: int) -> str:
         f'<a class="notice-button" href="{_e(url)}" target="_blank" '
         'rel="noreferrer noopener">View notice</a>'
     )
+
+
+def _recent_item(notice: dict) -> str:
+    role = notice["role"]
+    return f"""
+      <article class="recent-item" data-recent-id="{notice['notice_id']}">
+        <div>
+          <span class="recent-time">Retrieved {_e(_fmt_epoch(notice.get('captured_at')))}</span>
+          <strong>#{notice['notice_id']} · {_e(notice['domain'])}</strong>
+        </div>
+        <span class="recent-notice-date">Notice dated {_e(_fmt_notice_date(notice.get('date', '')))}</span>
+        <span class="role role-{_e(role)}">{_e(ROLE_LABELS.get(role, role))}</span>
+        {_notice_button(notice['notice_id'])}
+      </article>"""
 
 
 def _url_list(items: list[dict], empty: str) -> str:
@@ -173,6 +198,14 @@ def render_dashboard(data: dict) -> str:
     notices_html = "".join(_notice_row(item) for item in notices)
     if not notices_html:
         notices_html = '<p class="empty-state">The database does not contain any notices yet.</p>'
+    recent = sorted(
+        (item for item in notices if item["status"] == "complete" and item.get("captured_at")),
+        key=lambda item: float(item.get("captured_at") or 0),
+        reverse=True,
+    )[:8]
+    recent_html = "".join(_recent_item(item) for item in recent)
+    if not recent_html:
+        recent_html = '<p class="empty-state">No notice has been retrieved yet.</p>'
 
     synced_at = _fmt_timestamp(metadata.get("synced_at", ""))
     lookback_days = metadata.get("lookback_days", "90")
@@ -203,6 +236,7 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
 .metric{{padding:22px 24px;border-right:1px solid var(--line)}}.metric:last-child{{border-right:0}}.metric-label{{display:block;font-size:12px;color:var(--muted);margin-bottom:7px}}.metric-value{{font-size:31px;line-height:1;font-weight:740;letter-spacing:-.03em}}.metric-note{{display:block;font-size:11px;color:var(--muted);margin-top:8px}}
 .section-head{{display:flex;align-items:baseline;justify-content:space-between;gap:18px;margin:32px 0 12px}}h2{{font-size:19px;margin:0;letter-spacing:-.01em}}.section-head p{{margin:0;color:var(--muted);font-size:12px}}
 .priority-list{{background:var(--surface);border:1px solid var(--line)}}.priority-item{{display:grid;grid-template-columns:145px minmax(0,1fr) auto;gap:20px;padding:17px 20px;border-bottom:1px solid var(--line);align-items:start}}.priority-item:last-child{{border-bottom:0}}.priority-date{{font-size:15px;font-weight:720;color:var(--ink);line-height:1.2;padding-top:3px}}.priority-title{{font-weight:700;font-size:14px}}.priority-page{{font-size:13px;margin-top:3px;word-break:break-word}}.priority-item p{{font-size:12px;color:var(--muted);margin:7px 0 0}}.priority-actions{{display:flex;flex-direction:column;align-items:flex-end;gap:9px}}
+.recent-list{{background:var(--surface);border:1px solid var(--line)}}.recent-item{{display:grid;grid-template-columns:minmax(220px,1.4fr) minmax(180px,1fr) 150px auto;gap:20px;align-items:center;padding:15px 20px;border-bottom:1px solid var(--line)}}.recent-item:last-child{{border-bottom:0}}.recent-item strong{{display:block;font-size:14px;margin-top:3px}}.recent-time,.recent-notice-date{{font-size:12px;color:var(--muted)}}
 .notice-button{{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 11px;background:var(--blue);color:#fff;font-size:12px;font-weight:720;line-height:1;border:1px solid var(--blue);white-space:nowrap}}.notice-button:hover{{background:var(--blue-dark);border-color:var(--blue-dark);color:#fff;text-decoration:none}}.notice-button:focus{{outline:2px solid #9db7c9;outline-offset:2px}}
 .filters{{display:grid;grid-template-columns:minmax(240px,1fr) 190px 190px;gap:10px;margin-bottom:12px}}.filters input,.filters select{{width:100%;height:42px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:0 13px;font:inherit;font-size:13px;border-radius:0}}.filters input:focus,.filters select:focus{{outline:2px solid #9db7c9;outline-offset:1px}}
 .list-head{{display:grid;grid-template-columns:145px 90px 150px 150px minmax(230px,1fr) 115px 20px;gap:12px;padding:9px 16px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.045em}}
@@ -210,14 +244,14 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
 .role{{display:inline-flex;align-items:center;width:max-content;max-width:100%;padding:4px 8px;border:1px solid transparent;font-size:11px;font-weight:700;line-height:1.2}}.role-targeted{{color:var(--target);background:var(--target-bg);border-color:#e7c4bd}}.role-source{{color:var(--source);background:var(--source-bg);border-color:#bdd7c8}}.role-unresolved,.role-other{{color:var(--pending);background:var(--pending-bg);border-color:#dfd0a9}}
 .notice-detail{{padding:20px 22px 24px;background:#f8f7f3;border-top:1px solid var(--line)}}.detail-meta{{display:grid;grid-template-columns:2fr 1fr 100px auto;gap:18px;padding-bottom:18px;border-bottom:1px solid var(--line);align-items:end}}.detail-meta span{{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}}.detail-meta strong{{font-size:13px;font-weight:650}}.detail-action{{justify-self:end}}.url-columns{{display:grid;grid-template-columns:1fr 1fr;gap:32px;padding-top:18px}}.url-columns h3{{font-size:13px;margin:0 0 10px}}.url-list{{list-style:none;margin:0;padding:0}}.url-list li{{display:flex;align-items:flex-start;gap:8px;font-size:12px;padding:6px 0;border-bottom:1px solid #e7e3da;word-break:break-word}}.url-list li:last-child{{border-bottom:0}}.url-mark{{font-size:9px;font-weight:750;color:var(--target);border:1px solid #d8aaa0;padding:2px 4px;flex:0 0 auto}}.empty-detail,.empty-state{{color:var(--muted);font-size:13px;margin:0;padding:18px}}.muted{{color:var(--muted)}}
 .result-count{{font-size:12px;color:var(--muted);margin-top:10px;text-align:right}}
-@media(max-width:980px){{.metrics{{grid-template-columns:1fr 1fr}}.metric:nth-child(2){{border-right:0}}.metric:nth-child(-n+2){{border-bottom:1px solid var(--line)}}.intro{{align-items:flex-start;flex-direction:column}}.filters{{grid-template-columns:1fr 1fr}}.filters input{{grid-column:1/-1}}.list-head{{display:none}}summary{{grid-template-columns:125px 76px 1fr 20px}}.notice-domain{{grid-column:3}}.role{{grid-column:1/3}}.notice-page{{grid-column:3/5;white-space:normal}}.status{{display:none}}}}
-@media(max-width:640px){{.topbar{{align-items:flex-start;flex-direction:column}}.sync{{text-align:left}}main{{padding-top:24px}}.metrics{{grid-template-columns:1fr 1fr}}.metric{{padding:18px 16px}}.metric-value{{font-size:26px}}.priority-item{{grid-template-columns:1fr}}.priority-date{{padding:0}}.priority-actions{{align-items:flex-start}}.filters{{grid-template-columns:1fr}}.filters input{{grid-column:auto}}summary{{grid-template-columns:1fr auto;padding:14px}}.notice-date{{grid-column:1}}.notice-id{{grid-column:2}}.notice-domain{{grid-column:1/3}}.role{{grid-column:1/3}}.notice-page{{grid-column:1/3}}.chevron{{position:absolute;right:16px}}summary{{position:relative}}.detail-meta,.url-columns{{grid-template-columns:1fr}}.detail-action{{justify-self:start}}}}
+@media(max-width:980px){{.metrics{{grid-template-columns:1fr 1fr}}.metric:nth-child(2){{border-right:0}}.metric:nth-child(-n+2){{border-bottom:1px solid var(--line)}}.intro{{align-items:flex-start;flex-direction:column}}.recent-item{{grid-template-columns:1fr 1fr}}.filters{{grid-template-columns:1fr 1fr}}.filters input{{grid-column:1/-1}}.list-head{{display:none}}summary{{grid-template-columns:125px 76px 1fr 20px}}.notice-domain{{grid-column:3}}.role{{grid-column:1/3}}.notice-page{{grid-column:3/5;white-space:normal}}.status{{display:none}}}}
+@media(max-width:640px){{.topbar{{align-items:flex-start;flex-direction:column}}.sync{{text-align:left}}main{{padding-top:24px}}.metrics{{grid-template-columns:1fr 1fr}}.metric{{padding:18px 16px}}.metric-value{{font-size:26px}}.recent-item,.priority-item{{grid-template-columns:1fr}}.priority-date{{padding:0}}.priority-actions{{align-items:flex-start}}.filters{{grid-template-columns:1fr}}.filters input{{grid-column:auto}}summary{{grid-template-columns:1fr auto;padding:14px}}.notice-date{{grid-column:1}}.notice-id{{grid-column:2}}.notice-domain{{grid-column:1/3}}.role{{grid-column:1/3}}.notice-page{{grid-column:1/3}}.chevron{{position:absolute;right:16px}}summary{{position:relative}}.detail-meta,.url-columns{{grid-template-columns:1fr}}.detail-action{{justify-self:start}}}}
 </style>
 </head>
 <body>
 <header class="topbar">
   <div class="brand">DMCA Monitor <span>NSN</span></div>
-  <div class="sync">Database synced: {_e(synced_at)}<br>Page generated: {_e(generated)}</div>
+  <div class="sync">Database synced: {_e(synced_at)}<br>Page generated: {_e(generated)} · Auto-refreshes when new data lands</div>
 </header>
 <main>
   <section class="intro">
@@ -233,6 +267,11 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
     <div class="metric"><span class="metric-label">NSN pages targeted</span><strong class="metric-value">{summary['targeted']}</strong><span class="metric-note">Review first</span></div>
     <div class="metric"><span class="metric-label">NSN is the source</span><strong class="metric-value">{summary['source']}</strong><span class="metric-note">Content copied to other sites</span></div>
     <div class="metric"><span class="metric-label">Pending retrieval or review</span><strong class="metric-value">{summary['unresolved']}</strong><span class="metric-note">Lost link, pending request, or unclear role</span></div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>Recently retrieved</h2><p>Latest full notices collected by Tank</p></div>
+    <div class="recent-list">{recent_html}</div>
   </section>
 
   <section>
@@ -257,6 +296,7 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
   </section>
 </main>
 <script>
+const initialSync={json.dumps(metadata.get("synced_at", ""))};
 const rows=[...document.querySelectorAll('details.notice')];
 const search=document.getElementById('search');
 const role=document.getElementById('role-filter');
@@ -271,6 +311,13 @@ function applyFilters(){{
   count.textContent=`${{visible}} result(s)`;
 }}
 [search,role,status].forEach(el=>el.addEventListener('input',applyFilters));
+setInterval(async()=>{{
+  try{{
+    const response=await fetch('/health',{{cache:'no-store'}});
+    const health=await response.json();
+    if(health.synced_at&&health.synced_at!==initialSync) window.location.reload();
+  }}catch(error){{ /* Keep the current page during a temporary health-check failure. */ }}
+}},30000);
 </script>
 </body>
 </html>"""

@@ -32,7 +32,7 @@ class TestLiveDashboard(unittest.TestCase):
         pending.write_text(json.dumps([
             {
                 "id": 1, "domain": "bojoko.ca", "date": "August 30, 2026",
-                "status": "complete", "attempts": 1,
+                "status": "complete", "attempts": 1, "captured_at": 1788170400,
                 "scopes": [{"url": "https://bojoko.ca/", "host": "bojoko.ca", "path": "/"}],
                 "sender": "Sender One", "original_urls": ["https://source.example/work"],
                 "infringing_urls": ["https://bojoko.ca/casino/page"],
@@ -40,7 +40,7 @@ class TestLiveDashboard(unittest.TestCase):
             },
             {
                 "id": 2, "domain": "bojoko.ca", "date": "August 29, 2026",
-                "status": "complete", "attempts": 1,
+                "status": "complete", "attempts": 1, "captured_at": 1788166800,
                 "sender": "Sender Two", "original_urls": ["https://bojoko.ca/source/page"],
                 "infringing_urls": ["https://copy.example/page"],
                 "last_result": {"access_token": "MUST_NOT_BE_STORED"},
@@ -105,6 +105,12 @@ class TestLiveDashboard(unittest.TestCase):
             self.assertIn("View notice", html)
             self.assertIn("Last 90 days", html)
             self.assertIn("Notices in last 90 days", html)
+            self.assertIn("Recently retrieved", html)
+            self.assertIn('data-recent-id="1"', html)
+            self.assertIn('data-recent-id="2"', html)
+            self.assertLess(html.index('data-recent-id="1"'), html.index('data-recent-id="2"'))
+            self.assertIn("fetch('/health'", html)
+            self.assertIn("Auto-refreshes when new data lands", html)
             self.assertLess(html.index("30 August 2026"), html.index("29 August 2026"))
             self.assertEqual(page.headers["X-Frame-Options"], "DENY")
             health = client.get("/health")
