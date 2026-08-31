@@ -44,9 +44,32 @@ def _fmt_timestamp(value: str) -> str:
         return "Never"
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return parsed.astimezone(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+        utc = parsed.astimezone(timezone.utc)
+        return f"{utc.day} {utc.strftime('%B %Y, %H:%M UTC')}"
     except ValueError:
         return value
+
+
+def _fmt_notice_date(value: str) -> str:
+    if not value:
+        return "Date unknown"
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d")
+        return f"{parsed.day} {parsed.strftime('%B %Y')}"
+    except ValueError:
+        return value
+
+
+def _notice_link(notice_id: int) -> str:
+    return f"https://lumendatabase.org/notices/{int(notice_id)}"
+
+
+def _notice_button(notice_id: int) -> str:
+    url = _notice_link(notice_id)
+    return (
+        f'<a class="notice-button" href="{_e(url)}" target="_blank" '
+        'rel="noreferrer noopener">View notice</a>'
+    )
 
 
 def _url_list(items: list[dict], empty: str) -> str:
@@ -83,7 +106,7 @@ def _notice_row(notice: dict) -> str:
     return f"""
     <details class="notice" data-role="{_e(role)}" data-status="{_e(status)}" data-search="{_e(search_blob)}">
       <summary>
-        <span class="notice-date">{_e(notice.get('date') or 'Date unknown')}</span>
+        <span class="notice-date">{_e(_fmt_notice_date(notice.get('date', '')))}</span>
         <span class="notice-id">#{notice['notice_id']}</span>
         <span class="notice-domain">{_e(notice['domain'])}</span>
         <span class="role role-{_e(role)}">{_e(ROLE_LABELS.get(role, role))}</span>
@@ -96,6 +119,7 @@ def _notice_row(notice: dict) -> str:
           <div><span>Sender</span><strong>{_e(sender)}</strong></div>
           <div><span>Technical status</span><strong>{_e(status)}</strong></div>
           <div><span>Attempts</span><strong>{notice.get('attempts', 0)}</strong></div>
+          <div class="detail-action">{_notice_button(notice['notice_id'])}</div>
         </div>
         <div class="url-columns">
           <section>
@@ -125,13 +149,16 @@ def _priority_item(notice: dict) -> str:
     )
     return f"""
       <article class="priority-item">
-        <div class="priority-date">{_e(notice.get('date') or 'Date unknown')}</div>
+        <div class="priority-date">{_e(_fmt_notice_date(notice.get('date', '')))}</div>
         <div>
           <div class="priority-title">#{notice['notice_id']} · {_e(notice['domain'])}</div>
           <div class="priority-page">{page_html}</div>
           <p>{_e(action)}</p>
         </div>
-        <span class="role role-{_e(role)}">{_e(ROLE_LABELS.get(role, role))}</span>
+        <div class="priority-actions">
+          <span class="role role-{_e(role)}">{_e(ROLE_LABELS.get(role, role))}</span>
+          {_notice_button(notice['notice_id'])}
+        </div>
       </article>"""
 
 
@@ -148,7 +175,8 @@ def render_dashboard(data: dict) -> str:
         notices_html = '<p class="empty-state">The database does not contain any notices yet.</p>'
 
     synced_at = _fmt_timestamp(metadata.get("synced_at", ""))
-    generated = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+    now = datetime.now(timezone.utc)
+    generated = f"{now.day} {now.strftime('%B %Y, %H:%M UTC')}"
 
     return f"""<!doctype html>
 <html lang="en">
@@ -157,7 +185,7 @@ def render_dashboard(data: dict) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DMCA Monitor · NSN</title>
 <style>
-:root{{--ink:#18212b;--muted:#69737d;--paper:#f3f1ec;--surface:#fff;--line:#d9d5cc;--dark:#202a33;--target:#a33a2d;--target-bg:#f7e8e5;--source:#296347;--source-bg:#e5f0e9;--pending:#775b22;--pending-bg:#f4ecd8;--blue:#285a7d;}}
+:root{{--ink:#18212b;--muted:#69737d;--paper:#f3f1ec;--surface:#fff;--line:#d9d5cc;--dark:#202a33;--target:#a33a2d;--target-bg:#f7e8e5;--source:#296347;--source-bg:#e5f0e9;--pending:#775b22;--pending-bg:#f4ecd8;--blue:#285a7d;--blue-dark:#1e4966;}}
 *{{box-sizing:border-box}}
 html{{background:var(--paper)}}
 body{{margin:0;color:var(--ink);background:var(--paper);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.45}}
@@ -172,15 +200,16 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
 .metrics{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--line);background:var(--surface);margin-bottom:30px}}
 .metric{{padding:22px 24px;border-right:1px solid var(--line)}}.metric:last-child{{border-right:0}}.metric-label{{display:block;font-size:12px;color:var(--muted);margin-bottom:7px}}.metric-value{{font-size:31px;line-height:1;font-weight:740;letter-spacing:-.03em}}.metric-note{{display:block;font-size:11px;color:var(--muted);margin-top:8px}}
 .section-head{{display:flex;align-items:baseline;justify-content:space-between;gap:18px;margin:32px 0 12px}}h2{{font-size:19px;margin:0;letter-spacing:-.01em}}.section-head p{{margin:0;color:var(--muted);font-size:12px}}
-.priority-list{{background:var(--surface);border:1px solid var(--line)}}.priority-item{{display:grid;grid-template-columns:105px minmax(0,1fr) auto;gap:20px;padding:17px 20px;border-bottom:1px solid var(--line);align-items:start}}.priority-item:last-child{{border-bottom:0}}.priority-date{{font-size:12px;color:var(--muted);padding-top:3px}}.priority-title{{font-weight:700;font-size:14px}}.priority-page{{font-size:13px;margin-top:3px;word-break:break-word}}.priority-item p{{font-size:12px;color:var(--muted);margin:7px 0 0}}
+.priority-list{{background:var(--surface);border:1px solid var(--line)}}.priority-item{{display:grid;grid-template-columns:145px minmax(0,1fr) auto;gap:20px;padding:17px 20px;border-bottom:1px solid var(--line);align-items:start}}.priority-item:last-child{{border-bottom:0}}.priority-date{{font-size:15px;font-weight:720;color:var(--ink);line-height:1.2;padding-top:3px}}.priority-title{{font-weight:700;font-size:14px}}.priority-page{{font-size:13px;margin-top:3px;word-break:break-word}}.priority-item p{{font-size:12px;color:var(--muted);margin:7px 0 0}}.priority-actions{{display:flex;flex-direction:column;align-items:flex-end;gap:9px}}
+.notice-button{{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 11px;background:var(--blue);color:#fff;font-size:12px;font-weight:720;line-height:1;border:1px solid var(--blue);white-space:nowrap}}.notice-button:hover{{background:var(--blue-dark);border-color:var(--blue-dark);color:#fff;text-decoration:none}}.notice-button:focus{{outline:2px solid #9db7c9;outline-offset:2px}}
 .filters{{display:grid;grid-template-columns:minmax(240px,1fr) 190px 190px;gap:10px;margin-bottom:12px}}.filters input,.filters select{{width:100%;height:42px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:0 13px;font:inherit;font-size:13px;border-radius:0}}.filters input:focus,.filters select:focus{{outline:2px solid #9db7c9;outline-offset:1px}}
-.list-head{{display:grid;grid-template-columns:105px 90px 150px 150px minmax(230px,1fr) 115px 20px;gap:12px;padding:9px 16px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.045em}}
-.notice-list{{border:1px solid var(--line);background:var(--surface)}}details.notice{{border-bottom:1px solid var(--line)}}details.notice:last-child{{border-bottom:0}}details.notice[hidden]{{display:none}}summary{{display:grid;grid-template-columns:105px 90px 150px 150px minmax(230px,1fr) 115px 20px;gap:12px;align-items:center;padding:14px 16px;cursor:pointer;list-style:none;font-size:13px}}summary::-webkit-details-marker{{display:none}}summary:hover{{background:#faf9f6}}.notice-date,.notice-id,.status{{color:var(--muted)}}.notice-id{{font-variant-numeric:tabular-nums}}.notice-domain{{font-weight:670;overflow:hidden;text-overflow:ellipsis}}.notice-page{{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.more-count{{font-size:11px;color:var(--muted);margin-left:7px}}.chevron{{width:8px;height:8px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(45deg);transition:transform .15s}}details[open] .chevron{{transform:rotate(225deg)}}
+.list-head{{display:grid;grid-template-columns:145px 90px 150px 150px minmax(230px,1fr) 115px 20px;gap:12px;padding:9px 16px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.045em}}
+.notice-list{{border:1px solid var(--line);background:var(--surface)}}details.notice{{border-bottom:1px solid var(--line)}}details.notice:last-child{{border-bottom:0}}details.notice[hidden]{{display:none}}summary{{display:grid;grid-template-columns:145px 90px 150px 150px minmax(230px,1fr) 115px 20px;gap:12px;align-items:center;padding:14px 16px;cursor:pointer;list-style:none;font-size:13px}}summary::-webkit-details-marker{{display:none}}summary:hover{{background:#faf9f6}}.notice-date{{color:var(--ink);font-size:15px;font-weight:720;line-height:1.2}}.notice-id,.status{{color:var(--muted)}}.notice-id{{font-variant-numeric:tabular-nums}}.notice-domain{{font-weight:670;overflow:hidden;text-overflow:ellipsis}}.notice-page{{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.more-count{{font-size:11px;color:var(--muted);margin-left:7px}}.chevron{{width:8px;height:8px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(45deg);transition:transform .15s}}details[open] .chevron{{transform:rotate(225deg)}}
 .role{{display:inline-flex;align-items:center;width:max-content;max-width:100%;padding:4px 8px;border:1px solid transparent;font-size:11px;font-weight:700;line-height:1.2}}.role-targeted{{color:var(--target);background:var(--target-bg);border-color:#e7c4bd}}.role-source{{color:var(--source);background:var(--source-bg);border-color:#bdd7c8}}.role-unresolved,.role-other{{color:var(--pending);background:var(--pending-bg);border-color:#dfd0a9}}
-.notice-detail{{padding:20px 22px 24px;background:#f8f7f3;border-top:1px solid var(--line)}}.detail-meta{{display:grid;grid-template-columns:2fr 1fr 100px;gap:18px;padding-bottom:18px;border-bottom:1px solid var(--line)}}.detail-meta span{{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}}.detail-meta strong{{font-size:13px;font-weight:650}}.url-columns{{display:grid;grid-template-columns:1fr 1fr;gap:32px;padding-top:18px}}.url-columns h3{{font-size:13px;margin:0 0 10px}}.url-list{{list-style:none;margin:0;padding:0}}.url-list li{{display:flex;align-items:flex-start;gap:8px;font-size:12px;padding:6px 0;border-bottom:1px solid #e7e3da;word-break:break-word}}.url-list li:last-child{{border-bottom:0}}.url-mark{{font-size:9px;font-weight:750;color:var(--target);border:1px solid #d8aaa0;padding:2px 4px;flex:0 0 auto}}.empty-detail,.empty-state{{color:var(--muted);font-size:13px;margin:0;padding:18px}}.muted{{color:var(--muted)}}
+.notice-detail{{padding:20px 22px 24px;background:#f8f7f3;border-top:1px solid var(--line)}}.detail-meta{{display:grid;grid-template-columns:2fr 1fr 100px auto;gap:18px;padding-bottom:18px;border-bottom:1px solid var(--line);align-items:end}}.detail-meta span{{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}}.detail-meta strong{{font-size:13px;font-weight:650}}.detail-action{{justify-self:end}}.url-columns{{display:grid;grid-template-columns:1fr 1fr;gap:32px;padding-top:18px}}.url-columns h3{{font-size:13px;margin:0 0 10px}}.url-list{{list-style:none;margin:0;padding:0}}.url-list li{{display:flex;align-items:flex-start;gap:8px;font-size:12px;padding:6px 0;border-bottom:1px solid #e7e3da;word-break:break-word}}.url-list li:last-child{{border-bottom:0}}.url-mark{{font-size:9px;font-weight:750;color:var(--target);border:1px solid #d8aaa0;padding:2px 4px;flex:0 0 auto}}.empty-detail,.empty-state{{color:var(--muted);font-size:13px;margin:0;padding:18px}}.muted{{color:var(--muted)}}
 .result-count{{font-size:12px;color:var(--muted);margin-top:10px;text-align:right}}
-@media(max-width:980px){{.metrics{{grid-template-columns:1fr 1fr}}.metric:nth-child(2){{border-right:0}}.metric:nth-child(-n+2){{border-bottom:1px solid var(--line)}}.intro{{align-items:flex-start;flex-direction:column}}.filters{{grid-template-columns:1fr 1fr}}.filters input{{grid-column:1/-1}}.list-head{{display:none}}summary{{grid-template-columns:88px 76px 1fr 20px}}.notice-domain{{grid-column:3}}.role{{grid-column:1/3}}.notice-page{{grid-column:3/5;white-space:normal}}.status{{display:none}}}}
-@media(max-width:640px){{.topbar{{align-items:flex-start;flex-direction:column}}.sync{{text-align:left}}main{{padding-top:24px}}.metrics{{grid-template-columns:1fr 1fr}}.metric{{padding:18px 16px}}.metric-value{{font-size:26px}}.priority-item{{grid-template-columns:1fr}}.priority-date{{padding:0}}.filters{{grid-template-columns:1fr}}.filters input{{grid-column:auto}}summary{{grid-template-columns:1fr auto;padding:14px}}.notice-date{{grid-column:1}}.notice-id{{grid-column:2}}.notice-domain{{grid-column:1/3}}.role{{grid-column:1/3}}.notice-page{{grid-column:1/3}}.chevron{{position:absolute;right:16px}}summary{{position:relative}}.detail-meta,.url-columns{{grid-template-columns:1fr}}}}
+@media(max-width:980px){{.metrics{{grid-template-columns:1fr 1fr}}.metric:nth-child(2){{border-right:0}}.metric:nth-child(-n+2){{border-bottom:1px solid var(--line)}}.intro{{align-items:flex-start;flex-direction:column}}.filters{{grid-template-columns:1fr 1fr}}.filters input{{grid-column:1/-1}}.list-head{{display:none}}summary{{grid-template-columns:125px 76px 1fr 20px}}.notice-domain{{grid-column:3}}.role{{grid-column:1/3}}.notice-page{{grid-column:3/5;white-space:normal}}.status{{display:none}}}}
+@media(max-width:640px){{.topbar{{align-items:flex-start;flex-direction:column}}.sync{{text-align:left}}main{{padding-top:24px}}.metrics{{grid-template-columns:1fr 1fr}}.metric{{padding:18px 16px}}.metric-value{{font-size:26px}}.priority-item{{grid-template-columns:1fr}}.priority-date{{padding:0}}.priority-actions{{align-items:flex-start}}.filters{{grid-template-columns:1fr}}.filters input{{grid-column:auto}}summary{{grid-template-columns:1fr auto;padding:14px}}.notice-date{{grid-column:1}}.notice-id{{grid-column:2}}.notice-domain{{grid-column:1/3}}.role{{grid-column:1/3}}.notice-page{{grid-column:1/3}}.chevron{{position:absolute;right:16px}}summary{{position:relative}}.detail-meta,.url-columns{{grid-template-columns:1fr}}.detail-action{{justify-self:start}}}}
 </style>
 </head>
 <body>
@@ -210,7 +239,7 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
   </section>
 
   <section>
-    <div class="section-head"><h2>All notices</h2><p>Open a row to view its URLs</p></div>
+    <div class="section-head"><h2>All notices</h2><p>Newest first · Open a row to view its URLs</p></div>
     <div class="filters">
       <input id="search" type="search" placeholder="Search by domain, URL, sender, or ID" aria-label="Search">
       <select id="role-filter" aria-label="Filter by role">
