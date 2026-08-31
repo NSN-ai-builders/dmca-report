@@ -175,6 +175,8 @@ def render_dashboard(data: dict) -> str:
         notices_html = '<p class="empty-state">The database does not contain any notices yet.</p>'
 
     synced_at = _fmt_timestamp(metadata.get("synced_at", ""))
+    lookback_days = metadata.get("lookback_days", "90")
+    cutoff_date = _fmt_notice_date(metadata.get("cutoff_date", ""))
     now = datetime.now(timezone.utc)
     generated = f"{now.day} {now.strftime('%B %Y, %H:%M UTC')}"
 
@@ -221,13 +223,13 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
   <section class="intro">
     <div>
       <h1>Lumen notices</h1>
-      <p>NSN pages targeted by claims, NSN content copied elsewhere, and notices still awaiting retrieval. Data comes directly from Lumen rather than Google's delayed report.</p>
+      <p>NSN pages targeted by claims, NSN content copied elsewhere, and notices still awaiting retrieval. Data comes directly from Lumen and is limited to the last {_e(lookback_days)} days.</p>
     </div>
-    <div class="coverage"><strong>{summary['site_scopes']}</strong> sites · <strong>{summary['search_domains']}</strong> domains · <strong>{summary['baseline_domains']}</strong> baselines</div>
+    <div class="coverage"><strong>Last {_e(lookback_days)} days</strong> · Since {_e(cutoff_date)}<br><strong>{summary['site_scopes']}</strong> sites · <strong>{summary['search_domains']}</strong> domains · <strong>{summary['baseline_domains']}</strong> baselines</div>
   </section>
 
   <section class="metrics" aria-label="Summary">
-    <div class="metric"><span class="metric-label">Notices recorded</span><strong class="metric-value">{summary['total_notices']}</strong><span class="metric-note">{summary['complete']} with full details</span></div>
+    <div class="metric"><span class="metric-label">Notices in last {_e(lookback_days)} days</span><strong class="metric-value">{summary['total_notices']}</strong><span class="metric-note">{summary['complete']} with full details</span></div>
     <div class="metric"><span class="metric-label">NSN pages targeted</span><strong class="metric-value">{summary['targeted']}</strong><span class="metric-note">Review first</span></div>
     <div class="metric"><span class="metric-label">NSN is the source</span><strong class="metric-value">{summary['source']}</strong><span class="metric-note">Content copied to other sites</span></div>
     <div class="metric"><span class="metric-label">Pending retrieval or review</span><strong class="metric-value">{summary['unresolved']}</strong><span class="metric-note">Lost link, pending request, or unclear role</span></div>
@@ -239,7 +241,7 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
   </section>
 
   <section>
-    <div class="section-head"><h2>All notices</h2><p>Newest first · Open a row to view its URLs</p></div>
+    <div class="section-head"><h2>All notices · Last {_e(lookback_days)} days</h2><p>Newest first · Open a row to view its URLs</p></div>
     <div class="filters">
       <input id="search" type="search" placeholder="Search by domain, URL, sender, or ID" aria-label="Search">
       <select id="role-filter" aria-label="Filter by role">

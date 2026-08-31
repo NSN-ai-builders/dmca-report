@@ -10,7 +10,7 @@ import os
 import sqlite3
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -21,6 +21,7 @@ STATE = PROFILE / "dmca_state.json"
 DB_PATH = PROFILE / "dmca_monitor.db"
 REMOTE_HOST = "deploy@46.225.135.201"
 REMOTE_PATH = "/opt/lab-nsn/data/dmca-report/dmca_monitor.db"
+LOOKBACK_DAYS = 90
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -152,7 +153,7 @@ def _scope_match(url: str, scope: dict) -> bool:
 def _matching_scope(url: str, scopes: list[dict]) -> str:
     for scope in scopes:
         if _scope_match(url, scope):
-            return scope["scope_url"]
+            return scope.get("scope_url") or scope.get("url") or ""
     return ""
 
 
@@ -165,6 +166,20 @@ def _iso_date(value: str | None) -> str | None:
         except ValueError:
             continue
     return value
+
+
+def utc_today():
+    return datetime.now(timezone.utc).date()
+
+
+def _in_lookback_window(item: dict, cutoff) -> bool:
+    value = _iso_date(item.get("date"))
+    if not value:
+        return True
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date() >= cutoff
+    except ValueError:
+        return True
 
 
 def _payload(item: dict, by_domain: dict[str, list[dict]]) -> tuple[dict, list[dict]]:
@@ -215,7 +230,10 @@ def _payload(item: dict, by_domain: dict[str, list[dict]]) -> tuple[dict, list[d
 
 def build_database(db_path: Path = DB_PATH) -> dict:
     sites, by_domain = load_sites()
-    pending = json.loads(PENDING.read_text())
+    all_pending = json.loads(PENDING.read_text())
+    cutoff = utc_today() - timedelta(days=LOOKBACK_DAYS)
+    pending = [item for item in all_pending if _in_lookback_window(item, cutoff)]
+    filtered_out = len(all_pending) - len(pending)
     state = json.loads(STATE.read_text()) if STATE.exists() else {}
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
@@ -224,6 +242,8 @@ def build_database(db_path: Path = DB_PATH) -> dict:
         conn.executescript(SCHEMA)
         with conn:
             conn.execute("DELETE FROM sites")
+            # The queue is canonical. Rebuild notices so aged-out rows cannot linger.
+            conn.execute("DELETE FROM notices")
             conn.executemany(
                 """
                 INSERT INTO sites
@@ -271,6 +291,8 @@ def build_database(db_path: Path = DB_PATH) -> dict:
                 "search_domains": str(len(by_domain)),
                 "baseline_domains": str(len(state)),
                 "source": "lumen_direct",
+                "lookback_days": str(LOOKBACK_DAYS),
+                "cutoff_date": cutoff.isoformat(),
             }
             conn.executemany(
                 "INSERT INTO metadata(key, value) VALUES (?, ?) "
@@ -289,6 +311,8 @@ def build_database(db_path: Path = DB_PATH) -> dict:
         "targeted": int(row[1] or 0), "source": int(row[2] or 0),
         "unresolved": int(row[3] or 0), "site_scopes": len(sites),
         "search_domains": len(by_domain), "baseline_domains": len(state),
+        "lookback_days": LOOKBACK_DAYS, "cutoff_date": cutoff.isoformat(),
+        "filtered_out_of_window": filtered_out,
     }
 
 

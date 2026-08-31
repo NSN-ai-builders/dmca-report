@@ -3,6 +3,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest import mock
 
@@ -32,6 +33,7 @@ class TestLiveDashboard(unittest.TestCase):
             {
                 "id": 1, "domain": "bojoko.ca", "date": "August 30, 2026",
                 "status": "complete", "attempts": 1,
+                "scopes": [{"url": "https://bojoko.ca/", "host": "bojoko.ca", "path": "/"}],
                 "sender": "Sender One", "original_urls": ["https://source.example/work"],
                 "infringing_urls": ["https://bojoko.ca/casino/page"],
                 "email": "must-not-be-stored@example.invalid",
@@ -53,15 +55,22 @@ class TestLiveDashboard(unittest.TestCase):
                 "status": "complete", "attempts": 1,
                 "original_urls": [], "infringing_urls": ["https://www.partner.com/news/not-ours"],
             },
+            {
+                "id": 5, "domain": "bojoko.ca", "date": "January 1, 2026",
+                "status": "pending", "attempts": 0,
+                "original_urls": [], "infringing_urls": [],
+            },
         ]))
         state = root / "state.json"
         state.write_text(json.dumps({"bojoko.ca": {"ids": [1, 2]}, "partner.com": {"ids": [3, 4]}}))
         db = root / "dmca.db"
         with mock.patch.object(sync, "ACTIVE_SITES", sites), \
              mock.patch.object(sync, "PENDING", pending), \
-             mock.patch.object(sync, "STATE", state):
+             mock.patch.object(sync, "STATE", state), \
+             mock.patch.object(sync, "utc_today", return_value=date(2026, 8, 31)):
             result = sync.build_database(db)
         self.assertEqual(result["notices"], 4)
+        self.assertEqual(result["filtered_out_of_window"], 1)
         return db
 
     def test_ingestion_roles_scopes_and_secret_exclusion(self):
@@ -94,6 +103,8 @@ class TestLiveDashboard(unittest.TestCase):
             self.assertIn("30 August 2026", html)
             self.assertIn('href="https://lumendatabase.org/notices/1"', html)
             self.assertIn("View notice", html)
+            self.assertIn("Last 90 days", html)
+            self.assertIn("Notices in last 90 days", html)
             self.assertLess(html.index("30 August 2026"), html.index("29 August 2026"))
             self.assertEqual(page.headers["X-Frame-Options"], "DENY")
             health = client.get("/health")
