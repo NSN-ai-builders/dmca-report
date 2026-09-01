@@ -236,6 +236,7 @@ def build_database(db_path: Path = DB_PATH) -> dict:
     cutoff = utc_today() - timedelta(days=LOOKBACK_DAYS)
     pending = [item for item in all_pending if _in_lookback_window(item, cutoff)]
     filtered_out = len(all_pending) - len(pending)
+    filtered_unverified = 0
     state = json.loads(STATE.read_text()) if STATE.exists() else {}
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
@@ -258,6 +259,13 @@ def build_database(db_path: Path = DB_PATH) -> dict:
             )
             for item in pending:
                 notice, urls = _payload(item, by_domain)
+                # Defense in depth: the public dashboard must never attribute a
+                # fuzzy search hit unless exact scope evidence exists. Completed
+                # legacy rows can prove this from recovered URLs; new/pending
+                # rows carry verified_scopes from exact quoted discovery.
+                if not item.get("verified_scopes") and not any(row["monitored"] for row in urls):
+                    filtered_unverified += 1
+                    continue
                 conn.execute(
                     """
                     INSERT INTO notices
@@ -315,6 +323,7 @@ def build_database(db_path: Path = DB_PATH) -> dict:
         "search_domains": len(by_domain), "baseline_domains": len(state),
         "lookback_days": LOOKBACK_DAYS, "cutoff_date": cutoff.isoformat(),
         "filtered_out_of_window": filtered_out,
+        "filtered_unverified": filtered_unverified,
     }
 
 

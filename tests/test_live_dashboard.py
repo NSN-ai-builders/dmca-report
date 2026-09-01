@@ -48,6 +48,7 @@ class TestLiveDashboard(unittest.TestCase):
             {
                 "id": 3, "domain": "partner.com", "date": "August 28, 2026",
                 "status": "token_consumption_error", "attempts": 1,
+                "verified_scopes": ["https://www.partner.com/betting/"],
                 "original_urls": [], "infringing_urls": [],
             },
             {
@@ -69,8 +70,9 @@ class TestLiveDashboard(unittest.TestCase):
              mock.patch.object(sync, "STATE", state), \
              mock.patch.object(sync, "utc_today", return_value=date(2026, 8, 31)):
             result = sync.build_database(db)
-        self.assertEqual(result["notices"], 4)
+        self.assertEqual(result["notices"], 3)
         self.assertEqual(result["filtered_out_of_window"], 1)
+        self.assertEqual(result["filtered_unverified"], 1)
         return db
 
     def test_ingestion_roles_scopes_and_secret_exclusion(self):
@@ -83,7 +85,7 @@ class TestLiveDashboard(unittest.TestCase):
             self.assertEqual(by_id[1]["query_domain"], "bojoko.co.za")
             self.assertEqual(by_id[2]["role"], "source")
             self.assertEqual(by_id[3]["role"], "unresolved")
-            self.assertEqual(by_id[4]["role"], "other")
+            self.assertNotIn(4, by_id)
             self.assertEqual(data["summary"]["site_scopes"], 2)
             self.assertEqual(data["summary"]["search_domains"], 2)
             raw = db.read_bytes()
@@ -117,7 +119,7 @@ class TestLiveDashboard(unittest.TestCase):
             self.assertEqual(page.headers["X-Frame-Options"], "DENY")
             health = client.get("/health")
             self.assertEqual(health.status_code, 200)
-            self.assertEqual(health.get_json()["notices"], 4)
+            self.assertEqual(health.get_json()["notices"], 3)
             self.assertEqual(health.get_json()["site_scopes"], 2)
 
     def test_missing_database_is_503(self):
