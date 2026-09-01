@@ -210,7 +210,7 @@ def render_dashboard(data: dict) -> str:
         (item for item in notices if item["status"] == "complete" and item.get("captured_at")),
         key=lambda item: float(item.get("captured_at") or 0),
         reverse=True,
-    )[:8]
+    )
     recent_html = "".join(_recent_item(item) for item in recent)
     if not recent_html:
         recent_html = '<p class="empty-state">No notice has been retrieved yet.</p>'
@@ -284,7 +284,7 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
   </section>
 
   <section>
-    <div class="section-head"><h2>Recently retrieved</h2><p>Latest full notices collected by Tank</p></div>
+    <div class="section-head"><h2>Recently retrieved</h2><p>All {len(recent)} retrieved notices · newest first</p></div>
     <div class="recent-list">{recent_html}</div>
   </section>
 
