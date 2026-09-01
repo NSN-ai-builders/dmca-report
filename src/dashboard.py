@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import datetime, timezone
 from html import escape
 from urllib.parse import urlsplit
@@ -135,7 +136,7 @@ def _notice_row(notice: dict) -> str:
     ]).lower()
     sender = notice.get("sender") or "Not published"
     return f"""
-    <details class="notice" data-role="{_e(role)}" data-status="{_e(status)}" data-search="{_e(search_blob)}">
+    <details class="notice" data-domain="{_e(notice['domain'].lower())}" data-role="{_e(role)}" data-status="{_e(status)}" data-search="{_e(search_blob)}">
       <summary>
         <span class="notice-date">{_e(_fmt_notice_date(notice.get('date', '')))}</span>
         <span class="notice-id">#{notice['notice_id']}</span>
@@ -214,6 +215,12 @@ def render_dashboard(data: dict) -> str:
     if not recent_html:
         recent_html = '<p class="empty-state">No notice has been retrieved yet.</p>'
 
+    domain_counts = Counter(item["domain"] for item in notices if item.get("domain"))
+    domain_options = "".join(
+        f'<option value="{_e(domain.lower())}">{_e(domain)} ({count})</option>'
+        for domain, count in sorted(domain_counts.items(), key=lambda item: item[0].lower())
+    )
+
     synced_at = _fmt_timestamp(metadata.get("synced_at", ""))
     lookback_days = metadata.get("lookback_days", "90")
     cutoff_date = _fmt_notice_date(metadata.get("cutoff_date", ""))
@@ -245,7 +252,7 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
 .priority-list{{background:var(--surface);border:1px solid var(--line)}}.priority-item{{display:grid;grid-template-columns:145px minmax(0,1fr) auto;gap:20px;padding:17px 20px;border-bottom:1px solid var(--line);align-items:start}}.priority-item:last-child{{border-bottom:0}}.priority-date{{font-size:15px;font-weight:720;color:var(--ink);line-height:1.2;padding-top:3px}}.priority-title{{font-weight:700;font-size:14px}}.priority-page{{font-size:13px;margin-top:3px;word-break:break-word}}.priority-item p{{font-size:12px;color:var(--muted);margin:7px 0 0}}.priority-actions{{display:flex;flex-direction:column;align-items:flex-end;gap:9px}}
 .recent-list{{background:var(--surface);border:1px solid var(--line)}}.recent-item{{display:grid;grid-template-columns:minmax(220px,1.4fr) minmax(180px,1fr) 150px auto;gap:20px;align-items:center;padding:15px 20px;border-bottom:1px solid var(--line)}}.recent-item:last-child{{border-bottom:0}}.recent-item strong{{display:block;font-size:14px;margin-top:3px}}.recent-time,.recent-notice-date{{font-size:12px;color:var(--muted)}}.recent-notice-date small{{display:block;margin-top:4px}}
 .notice-button{{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 11px;background:var(--blue);color:#fff;font-size:12px;font-weight:720;line-height:1;border:1px solid var(--blue);white-space:nowrap}}.notice-button:hover{{background:var(--blue-dark);border-color:var(--blue-dark);color:#fff;text-decoration:none}}.notice-button:focus{{outline:2px solid #9db7c9;outline-offset:2px}}
-.filters{{display:grid;grid-template-columns:minmax(240px,1fr) 190px 190px;gap:10px;margin-bottom:12px}}.filters input,.filters select{{width:100%;height:42px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:0 13px;font:inherit;font-size:13px;border-radius:0}}.filters input:focus,.filters select:focus{{outline:2px solid #9db7c9;outline-offset:1px}}
+.filters{{display:grid;grid-template-columns:minmax(240px,1fr) repeat(3,190px);gap:10px;margin-bottom:12px}}.filters input,.filters select{{width:100%;height:42px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:0 13px;font:inherit;font-size:13px;border-radius:0}}.filters input:focus,.filters select:focus{{outline:2px solid #9db7c9;outline-offset:1px}}
 .list-head{{display:grid;grid-template-columns:145px 90px 150px 150px minmax(230px,1fr) 115px 20px;gap:12px;padding:9px 16px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.045em}}
 .notice-list{{border:1px solid var(--line);background:var(--surface)}}details.notice{{border-bottom:1px solid var(--line)}}details.notice:last-child{{border-bottom:0}}details.notice[hidden]{{display:none}}summary{{display:grid;grid-template-columns:145px 90px 150px 150px minmax(230px,1fr) 115px 20px;gap:12px;align-items:center;padding:14px 16px;cursor:pointer;list-style:none;font-size:13px}}summary::-webkit-details-marker{{display:none}}summary:hover{{background:#faf9f6}}.notice-date{{color:var(--ink);font-size:15px;font-weight:720;line-height:1.2}}.notice-id,.status{{color:var(--muted)}}.notice-id{{font-variant-numeric:tabular-nums}}.notice-domain{{font-weight:670;overflow:hidden;text-overflow:ellipsis}}.notice-page{{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.more-count{{font-size:11px;color:var(--muted);margin-left:7px}}.chevron{{width:8px;height:8px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(45deg);transition:transform .15s}}details[open] .chevron{{transform:rotate(225deg)}}
 .role{{display:inline-flex;align-items:center;width:max-content;max-width:100%;padding:4px 8px;border:1px solid transparent;font-size:11px;font-weight:700;line-height:1.2}}.role-targeted{{color:var(--target);background:var(--target-bg);border-color:#e7c4bd}}.role-source{{color:var(--source);background:var(--source-bg);border-color:#bdd7c8}}.role-unresolved,.role-other{{color:var(--pending);background:var(--pending-bg);border-color:#dfd0a9}}
@@ -287,9 +294,12 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
   </section>
 
   <section>
-    <div class="section-head"><h2>All notices · Last {_e(lookback_days)} days</h2><p>Newest first · Open a row to view its URLs</p></div>
+    <div class="section-head"><h2>All notices · Last {_e(lookback_days)} days</h2><p>Sorted by notice date, not retrieval time · Open a row to view its URLs</p></div>
     <div class="filters">
       <input id="search" type="search" placeholder="Search by domain, URL, sender, or ID" aria-label="Search">
+      <select id="domain-filter" aria-label="Filter by domain">
+        <option value="">All domains</option>{domain_options}
+      </select>
       <select id="role-filter" aria-label="Filter by role">
         <option value="">All roles</option><option value="targeted">NSN page targeted</option><option value="source">NSN is the source</option><option value="unresolved">Pending retrieval</option><option value="other">Role needs review</option>
       </select>
@@ -306,18 +316,19 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
 const initialSync={json.dumps(metadata.get("synced_at", ""))};
 const rows=[...document.querySelectorAll('details.notice')];
 const search=document.getElementById('search');
+const domain=document.getElementById('domain-filter');
 const role=document.getElementById('role-filter');
 const status=document.getElementById('status-filter');
 const count=document.getElementById('result-count');
 function applyFilters(){{
   const q=search.value.trim().toLowerCase(); let visible=0;
   rows.forEach(row=>{{
-    const ok=(!q||row.dataset.search.includes(q))&&(!role.value||row.dataset.role===role.value)&&(!status.value||row.dataset.status===status.value);
+    const ok=(!q||row.dataset.search.includes(q))&&(!domain.value||row.dataset.domain===domain.value)&&(!role.value||row.dataset.role===role.value)&&(!status.value||row.dataset.status===status.value);
     row.hidden=!ok; if(ok) visible++;
   }});
   count.textContent=`${{visible}} result(s)`;
 }}
-[search,role,status].forEach(el=>el.addEventListener('input',applyFilters));
+[search,domain,role,status].forEach(el=>el.addEventListener('input',applyFilters));
 setInterval(async()=>{{
   try{{
     const response=await fetch('/health',{{cache:'no-store'}});
