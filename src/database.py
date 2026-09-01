@@ -1,116 +1,112 @@
-"""SQLite caching layer for DMCA report data."""
+"""Read-only query layer for the live Lumen DMCA SQLite database."""
 
+from __future__ import annotations
+
+import os
 import sqlite3
-from datetime import datetime, timezone
+from collections import defaultdict
+from pathlib import Path
+from urllib.parse import urlsplit
 
-from src.models import DomainReport, NoticeDetail
-
-DB_PATH = "dmca_data.db"
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS domain_stats (
-    domain          TEXT PRIMARY KEY,
-    total_requested INTEGER NOT NULL DEFAULT 0,
-    total_removed   INTEGER NOT NULL DEFAULT 0,
-    no_action_taken INTEGER NOT NULL DEFAULT 0,
-    duplicate       INTEGER NOT NULL DEFAULT 0,
-    waiting         INTEGER NOT NULL DEFAULT 0,
-    fetched_at      TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS notices (
-    notice_id     TEXT NOT NULL,
-    domain        TEXT NOT NULL,
-    date          TEXT NOT NULL,
-    urls_claimed  INTEGER NOT NULL DEFAULT 0,
-    urls_removed  INTEGER NOT NULL DEFAULT 0,
-    reporter_name TEXT NOT NULL DEFAULT '',
-    owner_name    TEXT NOT NULL DEFAULT '',
-    lumen_url     TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (notice_id, domain),
-    FOREIGN KEY (domain) REFERENCES domain_stats(domain)
-);
-
-CREATE INDEX IF NOT EXISTS idx_notices_domain ON notices(domain);
-"""
+DB_PATH = os.environ.get("DMCA_DB_PATH", "/app/data/dmca_monitor.db")
 
 
-def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.executescript(_SCHEMA)
+def _connect(db_path: str = DB_PATH) -> sqlite3.Connection:
+    path = Path(db_path).resolve()
+    if not path.exists():
+        raise FileNotFoundError(path)
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA query_only = ON")
     return conn
 
 
-def save_domain_report(conn: sqlite3.Connection, report: DomainReport) -> None:
-    if report.error:
-        return
-    now = datetime.now(timezone.utc).isoformat()
-    with conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO domain_stats "
-            "(domain, total_requested, total_removed, no_action_taken, duplicate, waiting, fetched_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (report.domain, report.total_requested, report.total_removed,
-             report.no_action_taken, report.duplicate, report.waiting, now),
-        )
-        conn.execute("DELETE FROM notices WHERE domain = ?", (report.domain,))
-        conn.executemany(
-            "INSERT INTO notices "
-            "(notice_id, domain, date, urls_claimed, urls_removed, reporter_name, owner_name, lumen_url) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-                (n.notice_id, report.domain, n.date, n.urls_claimed, n.urls_removed,
-                 n.reporter_name, n.owner_name, n.lumen_url)
-                for n in report.notices
-            ],
-        )
+def _metadata(conn: sqlite3.Connection) -> dict[str, str]:
+    try:
+        rows = conn.execute("SELECT key, value FROM metadata").fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    return {row["key"]: row["value"] for row in rows}
 
 
-def load_domain_report(conn: sqlite3.Connection, domain: str) -> DomainReport | None:
-    row = conn.execute(
-        "SELECT total_requested, total_removed, no_action_taken, duplicate, waiting "
-        "FROM domain_stats WHERE domain = ?",
-        (domain,),
-    ).fetchone()
-    if row is None:
-        return None
-
-    notices = [
-        NoticeDetail(
-            notice_id=r[0], date=r[1], urls_claimed=r[2], urls_removed=r[3],
-            reporter_name=r[4], owner_name=r[5], lumen_url=r[6],
-        )
-        for r in conn.execute(
-            "SELECT notice_id, date, urls_claimed, urls_removed, reporter_name, owner_name, lumen_url "
-            "FROM notices WHERE domain = ? ORDER BY date DESC",
-            (domain,),
+def load_dashboard_data(db_path: str = DB_PATH) -> dict:
+    """Return the complete dashboard payload from a consistent read transaction."""
+    conn = _connect(db_path)
+    try:
+        conn.execute("BEGIN")
+        metadata = _metadata(conn)
+        notice_rows = conn.execute(
+            """
+            SELECT notice_id, search_domain, notice_date, title, status, role,
+                   sender, attempts, discovered_at, captured_at, updated_at
+            FROM notices
+            ORDER BY COALESCE(notice_date, '') DESC, notice_id DESC
+            """
         ).fetchall()
-    ]
+        url_rows = conn.execute(
+            """
+            SELECT notice_id, kind, url, monitored, scope_url
+            FROM notice_urls
+            ORDER BY notice_id DESC, kind, url
+            """
+        ).fetchall()
+        site_count = conn.execute("SELECT COUNT(*) FROM sites WHERE active = 1").fetchone()[0]
+        domain_count = conn.execute(
+            "SELECT COUNT(DISTINCT search_domain) FROM sites WHERE active = 1"
+        ).fetchone()[0]
+        conn.commit()
+    finally:
+        conn.close()
 
-    return DomainReport(
-        domain=domain,
-        total_requested=row[0],
-        total_removed=row[1],
-        no_action_taken=row[2],
-        duplicate=row[3],
-        waiting=row[4],
-        notices=notices,
-    )
+    urls_by_notice: dict[int, list[dict]] = defaultdict(list)
+    for row in url_rows:
+        urls_by_notice[int(row["notice_id"])].append({
+            "kind": row["kind"],
+            "url": row["url"],
+            "monitored": bool(row["monitored"]),
+            "scope_url": row["scope_url"] or "",
+        })
 
+    notices = []
+    for row in notice_rows:
+        notice_id = int(row["notice_id"])
+        urls = urls_by_notice.get(notice_id, [])
+        monitored_urls = [item["url"] for item in urls if item["monitored"]]
+        matched_scopes = list(dict.fromkeys(
+            item["scope_url"] for item in urls if item["monitored"] and item["scope_url"]
+        ))
+        matched_domains = list(dict.fromkeys(
+            (urlsplit(scope).hostname or "").removeprefix("www.") for scope in matched_scopes
+        ))
+        query_domain = row["search_domain"]
+        display_domain = ", ".join(domain for domain in matched_domains if domain) or query_domain
+        notices.append({
+            "notice_id": notice_id,
+            "domain": display_domain,
+            "query_domain": query_domain,
+            "matched_scopes": matched_scopes,
+            "date": row["notice_date"] or "",
+            "title": row["title"] or "DMCA",
+            "status": row["status"],
+            "role": row["role"],
+            "sender": row["sender"] or "",
+            "attempts": int(row["attempts"] or 0),
+            "discovered_at": row["discovered_at"],
+            "captured_at": row["captured_at"],
+            "updated_at": row["updated_at"],
+            "monitored_urls": monitored_urls,
+            "original_urls": [item for item in urls if item["kind"] == "original"],
+            "infringing_urls": [item for item in urls if item["kind"] == "infringing"],
+        })
 
-def is_stale(conn: sqlite3.Connection, domain: str, max_age_hours: int = 24) -> bool:
-    row = conn.execute(
-        "SELECT fetched_at FROM domain_stats WHERE domain = ?", (domain,),
-    ).fetchone()
-    if row is None:
-        return True
-    fetched_at = datetime.fromisoformat(row[0])
-    age = datetime.now(timezone.utc) - fetched_at
-    return age.total_seconds() > max_age_hours * 3600
-
-
-def clear_all(conn: sqlite3.Connection) -> None:
-    with conn:
-        conn.execute("DELETE FROM notices")
-        conn.execute("DELETE FROM domain_stats")
+    summary = {
+        "total_notices": len(notices),
+        "targeted": sum(item["role"] == "targeted" for item in notices),
+        "source": sum(item["role"] == "source" for item in notices),
+        "unresolved": sum(item["role"] in {"unresolved", "other"} for item in notices),
+        "complete": sum(item["status"] == "complete" for item in notices),
+        "site_scopes": site_count,
+        "search_domains": domain_count,
+        "baseline_domains": int(metadata.get("baseline_domains", "0") or 0),
+    }
+    return {"metadata": metadata, "summary": summary, "notices": notices}
