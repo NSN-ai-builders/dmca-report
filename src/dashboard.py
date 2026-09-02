@@ -258,7 +258,11 @@ def render_dashboard(data: dict) -> str:
         notices_html = '<p class="empty-state">The database does not contain any notices yet.</p>'
     recent = sorted(
         (item for item in notices if item["status"] == "complete" and item.get("captured_at")),
-        key=lambda item: float(item.get("captured_at") or 0),
+        key=lambda item: (
+            item.get("date") or "",
+            float(item.get("captured_at") or 0),
+            int(item.get("notice_id") or 0),
+        ),
         reverse=True,
     )
     recent_html = "".join(_recent_item(item) for item in recent)
@@ -336,21 +340,6 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
   </section>
 
   <section>
-    <div class="section-head"><h2>Google visibility alerts</h2><p>Previously indexed, then absent from two exact checks at least six hours apart</p></div>
-    <div class="priority-list">{deindexed_html}</div>
-  </section>
-
-  <section>
-    <div class="section-head"><h2>Recently retrieved</h2><p>All {len(recent)} retrieved notices · newest first</p></div>
-    <div class="recent-list">{recent_html}</div>
-  </section>
-
-  <section>
-    <div class="section-head"><h2>Needs attention</h2><p>Targeted pages and incomplete notices</p></div>
-    <div class="priority-list">{priority_html}</div>
-  </section>
-
-  <section>
     <div class="section-head"><h2>All notices · Last {_e(lookback_days)} days</h2><p>Sorted by notice date, not retrieval time · Open a row to view its URLs</p></div>
     <div class="filters">
       <input id="search" type="search" placeholder="Search by domain, URL, sender, or ID" aria-label="Search">
@@ -367,6 +356,21 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
     <div class="list-head"><span>Date</span><span>Notice</span><span>Domain</span><span>Role</span><span>Monitored page</span><span>Status</span><span></span></div>
     <div class="notice-list" id="notice-list">{notices_html}</div>
     <div class="result-count" id="result-count">{len(notices)} result(s)</div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>Google visibility alerts</h2><p>Previously indexed, then absent from two exact checks at least six hours apart</p></div>
+    <div class="priority-list">{deindexed_html}</div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>Needs attention</h2><p>Targeted pages and incomplete notices</p></div>
+    <div class="priority-list">{priority_html}</div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>Recently retrieved</h2><p>All {len(recent)} retrieved notices · Sorted by notice date · newest first</p></div>
+    <div class="recent-list">{recent_html}</div>
   </section>
 </main>
 <script>
