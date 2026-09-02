@@ -14,6 +14,56 @@ from src.server import create_app
 
 
 class TestLiveDashboard(unittest.TestCase):
+    def test_section_order_and_recent_notice_date_sort(self):
+        notices = []
+        for notice_id, notice_date, captured_at in (
+            (1, "2026-08-28", 300),
+            (2, "2026-08-30", 100),
+            (3, "2026-08-29", 200),
+        ):
+            notices.append({
+                "notice_id": notice_id,
+                "domain": "bojoko.ca",
+                "query_domain": "bojoko.ca",
+                "date": notice_date,
+                "status": "complete",
+                "role": "targeted",
+                "sender": "Sender",
+                "attempts": 1,
+                "captured_at": captured_at,
+                "monitored_urls": ["https://bojoko.ca/page"],
+                "original_urls": [],
+                "infringing_urls": [],
+            })
+        html = render_dashboard({
+            "notices": notices,
+            "summary": {
+                "total_notices": 3,
+                "complete": 3,
+                "targeted": 3,
+                "source": 0,
+                "unresolved": 0,
+                "site_scopes": 1,
+                "search_domains": 1,
+                "baseline_domains": 1,
+            },
+            "metadata": {
+                "lookback_days": 90,
+                "cutoff_date": "2026-06-02",
+                "synced_at": "2026-09-01T12:00:00+00:00",
+            },
+        })
+        all_notices = html.index("All notices · Last")
+        google_alerts = html.index("Google visibility alerts")
+        needs_attention = html.index("Needs attention")
+        recently_retrieved = html.index("Recently retrieved")
+        self.assertLess(all_notices, google_alerts)
+        self.assertLess(google_alerts, needs_attention)
+        self.assertLess(needs_attention, recently_retrieved)
+        self.assertLess(html.index('data-recent-id="2"'), html.index('data-recent-id="3"'))
+        self.assertLess(html.index('data-recent-id="3"'), html.index('data-recent-id="1"'))
+        self.assertIn("Sorted by notice date · newest first", html)
+
     def test_recently_retrieved_is_exhaustive(self):
         notices = []
         for notice_id in range(1, 11):
