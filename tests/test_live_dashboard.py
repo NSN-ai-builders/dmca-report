@@ -82,7 +82,7 @@ class TestLiveDashboard(unittest.TestCase):
                 "id": 2, "domain": "bojoko.ca", "date": "August 29, 2026",
                 "status": "complete", "attempts": 1, "captured_at": 1788166800,
                 "sender": "Sender Two", "original_urls": ["https://bojoko.ca/source/page"],
-                "infringing_urls": ["https://copy.example/page"],
+                "infringing_urls": ["https://copy.example/page", "https://d[redacted]o.co.pl"],
                 "last_result": {"access_token": "MUST_NOT_BE_STORED"},
             },
             {
@@ -165,7 +165,40 @@ class TestLiveDashboard(unittest.TestCase):
             health = client.get("/health")
             self.assertEqual(health.status_code, 200)
             self.assertEqual(health.get_json()["notices"], 3)
+            self.assertEqual(health.get_json()["likely_deindexed"], 0)
             self.assertEqual(health.get_json()["site_scopes"], 2)
+
+    def test_deindexation_alert_is_prioritized(self):
+        with tempfile.TemporaryDirectory() as td:
+            db = self.build_fixture(Path(td))
+            conn = sqlite3.connect(db)
+            conn.execute(
+                """
+                INSERT INTO indexation_state
+                (url, state, first_seen_at, last_checked_at, last_positive_at,
+                 first_absent_at, consecutive_absent, absence_confirmed_at,
+                 last_http_status, last_indexable, alert_emitted_at)
+                VALUES (?, 'serp_absent_confirmed', ?, ?, ?, ?, 2, ?, 200, 1, ?)
+                """,
+                (
+                    "https://bojoko.ca/casino/page",
+                    "2026-09-01T00:00:00+00:00",
+                    "2026-09-02T12:00:00+00:00",
+                    "2026-09-02T00:00:00+00:00",
+                    "2026-09-02T06:00:00+00:00",
+                    "2026-09-02T12:00:00+00:00",
+                    "2026-09-02T12:00:00+00:00",
+                ),
+            )
+            conn.commit()
+            conn.close()
+            data = load_dashboard_data(str(db))
+            self.assertEqual(data["summary"]["likely_deindexed"], 1)
+            self.assertEqual(data["notices"][0]["indexation_state"], "serp_absent_confirmed")
+            html = render_dashboard(data)
+            self.assertIn("Priority deindexation alerts", html)
+            self.assertIn("Google: likely deindexed", html)
+            self.assertIn("two exact-URL Google checks at least six hours apart", html)
 
     def test_missing_database_is_503(self):
         with tempfile.TemporaryDirectory() as td:

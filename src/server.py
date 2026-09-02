@@ -71,6 +71,7 @@ def create_app(db_path: str | None = None) -> Flask:
             "status": "ok",
             "database": str(Path(selected_db).name),
             "notices": data["summary"]["total_notices"],
+            "likely_deindexed": data["summary"].get("likely_deindexed", 0),
             "site_scopes": data["summary"]["site_scopes"],
             "search_domains": data["summary"]["search_domains"],
             "synced_at": data["metadata"].get("synced_at"),

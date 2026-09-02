@@ -43,6 +43,43 @@ The database never stores inbox addresses, Scrapfly URLs, API keys or Lumen acce
 - Read-only Flask endpoints: `/`, `/api/notices`, `/health`.
 - Existing `auth.labnsn.com` protection is unchanged.
 
+## Priority indexation alerts
+
+Only exact NSN URLs named as allegedly infringing are monitored. Duplicate URLs across notices count as one DataForSEO check.
+
+The monitor uses two signals:
+
+1. DataForSEO Google Organic Live Regular with `site:<exact URL>` and an exact `target`.
+2. A page-health check for HTTP 200, no `noindex`, and a matching canonical. If the site blocks the local probe, DataForSEO OnPage Instant Pages provides the fallback.
+
+The state machine is conservative:
+
+```text
+no baseline -> indexed -> suspect -> deindexed -> indexed
+                 |          |            |
+              present    1 absence    2 absences >= 6h apart
+```
+
+A red alert requires a prior positive baseline plus two absences at least six hours apart. API failures do not count as absences. A 404, `noindex`, or canonical change becomes a technical page issue instead of a DMCA deindexation alert.
+
+The script prints only transitions, so a no-agent cron can deliver the output directly to Telegram without routine noise. The dashboard keeps the current state and 120 days of check history.
+
+Current DataForSEO cost is $0.01 per URL check because search operators apply a 5x multiplier to the $0.002 live SERP price. With the current seven unique targeted URLs and a six-hour schedule, the estimate is $0.28/day or $8.40 per 30-day month. The OnPage fallback costs $0.00015 when needed.
+
+Run a baseline manually:
+
+```bash
+DATAFORSEO_LOGIN='...' DATAFORSEO_PASSWORD='...' \
+  .venv/bin/python scripts/check_indexation.py --json
+```
+
+Cron mode (silent unless an alert or provider error occurs):
+
+```bash
+DATAFORSEO_LOGIN='...' DATAFORSEO_PASSWORD='...' \
+  .venv/bin/python scripts/check_indexation.py
+```
+
 ## Operations
 
 Local database build without upload:

@@ -9,10 +9,17 @@ import json
 import os
 import sqlite3
 import subprocess
+import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.indexation import INDEXATION_SCHEMA, ensure_indexation_schema
 
 PROFILE = Path.home() / ".hermes" / "profiles" / "tank"
 ACTIVE_SITES = PROFILE / "active-sites.csv"
@@ -71,7 +78,7 @@ CREATE TABLE IF NOT EXISTS notice_urls (
     FOREIGN KEY (notice_id) REFERENCES notices(notice_id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_notice_urls_monitored ON notice_urls(monitored);
-"""
+""" + INDEXATION_SCHEMA
 
 
 def _normalize_domain(value: str) -> str:
@@ -243,6 +250,7 @@ def build_database(db_path: Path = DB_PATH) -> dict:
     try:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
+        ensure_indexation_schema(conn)
         with conn:
             conn.execute("DELETE FROM sites")
             # The queue is canonical. Rebuild notices so aged-out rows cannot linger.
