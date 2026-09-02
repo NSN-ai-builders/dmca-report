@@ -598,7 +598,7 @@ def format_alerts(result: dict) -> str:
         notice_ids = alert.get("notice_ids") or "unknown"
         if alert["kind"] == "likely_deindexed":
             lines.extend([
-                "🔴 PRIORITY — DMCA-reported page likely deindexed",
+                "🔴 PRIORITY — DMCA-reported page no longer found in Google checks",
                 alert["url"],
                 f"Lumen notice(s): {notice_ids}",
                 "No longer returned by two exact-URL DataForSEO checks at least 6 hours apart; the page still returns 200 and remains indexable.",
