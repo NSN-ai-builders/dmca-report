@@ -160,6 +160,8 @@ class TestLiveDashboard(unittest.TestCase):
             self.assertIn("Sorted by notice date, not retrieval time", html)
             self.assertIn("fetch('/health'", html)
             self.assertIn("Auto-refreshes when new data lands", html)
+            self.assertIn("Not yet verified", html)
+            self.assertNotIn("Google: no baseline", html)
             self.assertLess(html.index("30 August 2026"), html.index("29 August 2026"))
             self.assertEqual(page.headers["X-Frame-Options"], "DENY")
             health = client.get("/health")
@@ -196,8 +198,8 @@ class TestLiveDashboard(unittest.TestCase):
             self.assertEqual(data["summary"]["likely_deindexed"], 1)
             self.assertEqual(data["notices"][0]["indexation_state"], "serp_absent_confirmed")
             html = render_dashboard(data)
-            self.assertIn("Priority deindexation alerts", html)
-            self.assertIn("Google: likely deindexed", html)
+            self.assertIn("Google visibility alerts", html)
+            self.assertIn("No longer found", html)
             self.assertIn("two exact-URL Google checks at least six hours apart", html)
 
     def test_missing_database_is_503(self):

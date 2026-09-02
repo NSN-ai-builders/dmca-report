@@ -28,11 +28,11 @@ STATUS_LABELS = {
 }
 
 INDEXATION_LABELS = {
-    "indexed": "Google: indexed",
-    "suspect": "Google: verification pending",
-    "serp_absent_confirmed": "Google: likely deindexed",
+    "indexed": "Indexed",
+    "suspect": "Verification pending",
+    "serp_absent_confirmed": "No longer found",
     "technical": "Page issue",
-    "unknown": "Google: no baseline",
+    "unknown": "Not yet verified",
 }
 
 
@@ -147,10 +147,12 @@ def _notice_row(notice: dict) -> str:
         if primary else '<span class="muted">Not identified</span>'
     )
     indexation_state = notice.get("indexation_state", "unknown")
+    has_indexation_target = bool(notice.get("indexation_urls"))
+    indexation_badge = _indexation_badge(indexation_state) if has_indexation_target else ""
     search_blob = " ".join([
         str(notice["notice_id"]), notice["domain"], query_domain, notice.get("sender", ""),
         " ".join(monitored), ROLE_LABELS.get(role, role), STATUS_LABELS.get(status, status),
-        INDEXATION_LABELS.get(indexation_state, indexation_state),
+        INDEXATION_LABELS.get(indexation_state, indexation_state) if has_indexation_target else "",
     ]).lower()
     sender = notice.get("sender") or "Not published"
     return f"""
@@ -161,7 +163,7 @@ def _notice_row(notice: dict) -> str:
         <span class="notice-domain">{_e(notice['domain'])}</span>
         <span class="role role-{_e(role)}">{_e(ROLE_LABELS.get(role, role))}</span>
         <span class="notice-page">{primary_html}</span>
-        <span class="status">{_e(STATUS_LABELS.get(status, status))}{_indexation_badge(indexation_state)}</span>
+        <span class="status">{_e(STATUS_LABELS.get(status, status))}{indexation_badge}</span>
         <span class="chevron" aria-hidden="true"></span>
       </summary>
       <div class="notice-detail">
@@ -202,6 +204,10 @@ def _priority_item(notice: dict) -> str:
     )
     related_ids = notice.get("related_notice_ids") or [notice["notice_id"]]
     notice_label = ", ".join(f"#{notice_id}" for notice_id in related_ids)
+    indexation_badge = (
+        _indexation_badge(notice.get("indexation_state", "unknown"))
+        if notice.get("indexation_urls") else ""
+    )
     return f"""
       <article class="priority-item">
         <div class="priority-date">{_e(_fmt_notice_date(notice.get('date', '')))}</div>
@@ -211,7 +217,7 @@ def _priority_item(notice: dict) -> str:
           <p>{_e(action)}</p>
         </div>
         <div class="priority-actions">
-          {_indexation_badge(notice.get('indexation_state', 'unknown'))}
+          {indexation_badge}
           <span class="role role-{_e(role)}">{_e(ROLE_LABELS.get(role, role))}</span>
           {_notice_button(notice['notice_id'])}
         </div>
@@ -238,7 +244,7 @@ def render_dashboard(data: dict) -> str:
     deindexed = list(deindexed_by_url.values())
     deindexed_html = "".join(_priority_item(item) for item in deindexed)
     if not deindexed_html:
-        deindexed_html = '<p class="empty-state">No confirmed deindexation alert.</p>'
+        deindexed_html = '<p class="empty-state">No previously indexed page is currently missing from Google checks.</p>'
     priorities = [
         item for item in notices
         if item["role"] in {"targeted", "unresolved", "other"}
@@ -323,14 +329,14 @@ h1{{font-size:clamp(30px,4vw,48px);line-height:1.06;letter-spacing:-.035em;margi
 
   <section class="metrics" aria-label="Summary">
     <div class="metric"><span class="metric-label">Notices in last {_e(lookback_days)} days</span><strong class="metric-value">{summary['total_notices']}</strong><span class="metric-note">{summary['complete']} with full details</span></div>
-    <div class="metric"><span class="metric-label">Likely deindexed</span><strong class="metric-value">{summary.get('likely_deindexed', 0)}</strong><span class="metric-note">Priority signals</span></div>
+    <div class="metric"><span class="metric-label">No longer found</span><strong class="metric-value">{summary.get('likely_deindexed', 0)}</strong><span class="metric-note">Previously indexed pages</span></div>
     <div class="metric"><span class="metric-label">NSN pages targeted</span><strong class="metric-value">{summary['targeted']}</strong><span class="metric-note">Review first</span></div>
     <div class="metric"><span class="metric-label">NSN is the source</span><strong class="metric-value">{summary['source']}</strong><span class="metric-note">Content copied to other sites</span></div>
     <div class="metric"><span class="metric-label">Pending retrieval or review</span><strong class="metric-value">{summary['unresolved']}</strong><span class="metric-note">Lost link, pending request, or unclear role</span></div>
   </section>
 
   <section>
-    <div class="section-head"><h2>Priority deindexation alerts</h2><p>Strong signal, not authoritative index status · page still indexable</p></div>
+    <div class="section-head"><h2>Google visibility alerts</h2><p>Previously indexed, then absent from two exact checks at least six hours apart</p></div>
     <div class="priority-list">{deindexed_html}</div>
   </section>
 
