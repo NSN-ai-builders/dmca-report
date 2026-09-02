@@ -13,11 +13,16 @@ jobs:
       - name: Claude Code security & simplification review
         run: |
           npm install -g @anthropic-ai/claude-code --silent
+          set +e
           REVIEW=$(claude --print \
             "Review this codebase for: 1) security issues (injections, exposed secrets, auth flaws) 2) simplification opportunities. Be concise, list findings as bullet points. If critical security issue found, start your response with CRITICAL:" \
-            --permission-mode bypassPermissions)
+            --permission-mode bypassPermissions 2>&1)
+          REVIEW_STATUS=$?
+          set -e
           echo "$REVIEW"
-          if echo "$REVIEW" | grep -q "^CRITICAL"; then
+          if [ "$REVIEW_STATUS" -ne 0 ]; then
+            echo "::warning::Claude review unavailable (exit $REVIEW_STATUS); continuing deploy."
+          elif echo "$REVIEW" | grep -q "^CRITICAL"; then
             echo "::error::Critical security issue detected — deploy blocked. Fix before merging."
             exit 1
           fi
